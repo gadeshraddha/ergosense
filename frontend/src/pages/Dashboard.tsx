@@ -1,101 +1,123 @@
-import type { ReactNode } from 'react'
-import { useAuth } from '../auth/useAuth'
-import Icon from '../components/Icon'
-import type { IconName } from '../components/Icon'
-import PageHeader from '../components/PageHeader'
-import { useHealth } from '../hooks/useHealth'
+import { useEffect, useState } from 'react';
+import { usePostureTracking } from '../hooks/usePostureTracking';
+import type { PostureData } from '../hooks/usePostureTracking';
 
-function InfoCard({ icon, title, children }: { icon: IconName; title: string; children: ReactNode }) {
+interface InfoCardProps {
+  title: string;
+  value: string;
+  status?: 'good' | 'warning' | 'danger' | 'neutral';
+  subtitle?: string;
+}
+
+const InfoCard = ({ title, value, status = 'neutral', subtitle }: InfoCardProps) => {
+  const statusColors = {
+    good: 'text-emerald-600 dark:text-emerald-400',
+    warning: 'text-yellow-600 dark:text-yellow-400',
+    danger: 'text-red-600 dark:text-red-400',
+    neutral: 'text-blue-600 dark:text-blue-400',
+  };
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400">
-        <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800">
-          <Icon name={icon} className="h-5 w-5" />
-        </span>
-        <span className="text-sm font-medium">{title}</span>
-      </div>
-      <div className="mt-4">{children}</div>
+    <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg border border-gray-200 dark:border-slate-700">
+      <h3 className="text-gray-600 dark:text-slate-300 text-sm uppercase tracking-wide mb-2">{title}</h3>
+      <p className={`text-3xl font-bold ${statusColors[status]} mb-1`}>{value}</p>
+      {subtitle && <p className="text-gray-500 dark:text-slate-400 text-xs">{subtitle}</p>}
     </div>
-  )
-}
+  );
+};
 
-const ROADMAP = [
-  { module: 'M2', text: 'Live sensor engine: webcam posture + light stream (mock mode works with no hardware)' },
-  { module: 'M3', text: 'Calibration wizard, personal baseline, drift detection, Ergo Score and explanations' },
-  { module: 'M4', text: 'This dashboard turns live: score gauge, factor cards and the AI insight' },
-  { module: 'M5', text: 'Auto-brightness, voice feedback, alerts and settings' },
-  { module: 'M6', text: 'Sessions, history charts, demo mode' },
-]
+export const Dashboard = () => {
+  const [postureData, setPostureData] = useState<PostureData>({
+    posture: 'Waiting',
+    distance: 'Waiting',
+    neckTilt: '0.000',
+    timestamp: Date.now(),
+  });
+  const [ambientLight, setAmbientLight] = useState<number>(500);
 
-export default function Dashboard() {
-  const { user } = useAuth()
-  const health = useHealth()
-  const firstName = user?.name.split(' ')[0] ?? ''
-  const memberSince = user
-    ? new Date(user.created_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
-    : ''
+  const { videoRef, isReady, cameraError } = usePostureTracking(setPostureData);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setAmbientLight(Math.floor(100 + Math.random() * 900));
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  const getPostureStatus = (): 'good' | 'warning' | 'danger' | 'neutral' => {
+    if (postureData.posture === 'Upright') return 'good';
+    if (postureData.posture === 'Leaning Forward') return 'warning';
+    if (postureData.posture === 'Looking Up') return 'warning';
+    return 'neutral';
+  };
+
+  const getDistanceStatus = (): 'good' | 'warning' | 'danger' | 'neutral' => {
+    if (postureData.distance === 'Good') return 'good';
+    if (postureData.distance === 'Close') return 'warning';
+    if (postureData.distance === 'Too Close') return 'danger';
+    return 'neutral';
+  };
 
   return (
-    <>
-      <PageHeader
-        title={`Welcome, ${firstName}`}
-        description="Your live workstation overview arrives with module M4. Until then, here is a system check."
-      />
+    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 text-gray-900 dark:text-slate-100 p-6">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-3xl font-bold mb-8 text-gray-900 dark:text-slate-100">ErgoSense Dashboard</h1>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <InfoCard icon="server" title="Backend">
-          {health.status === 'checking' && <p className="text-lg font-semibold text-amber-600">Checking…</p>}
-          {health.status === 'online' && (
-            <>
-              <p className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">Online</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{health.app} API is responding</p>
-            </>
-          )}
-          {health.status === 'offline' && (
-            <>
-              <p className="text-lg font-semibold text-red-600 dark:text-red-400">Offline</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                Start the backend (see README) and this will turn green by itself.
-              </p>
-            </>
-          )}
-        </InfoCard>
+        {cameraError && (
+          <div className="bg-red-50 dark:bg-red-900/50 border border-red-300 dark:border-red-500 rounded-lg p-4 mb-6">
+            <p className="text-red-700 dark:text-red-200 font-semibold">Camera Error</p>
+            <p className="text-red-600 dark:text-red-300 text-sm mt-1">
+              {cameraError.message || 'Unable to access camera. Please check permissions.'}
+            </p>
+          </div>
+        )}
 
-        <InfoCard icon="chip" title="Sensor mode">
-          {health.status === 'online' ? (
-            <>
-              <p className="text-lg font-semibold">{health.mock ? 'Mock sensors' : 'Real hardware'}</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                {health.mock
-                  ? 'Simulated posture and light, no webcam or ESP32 needed.'
-                  : 'Using the webcam and ESP32.'}
-              </p>
-            </>
-          ) : (
-            <p className="text-sm text-slate-500 dark:text-slate-400">Unknown until the backend is online.</p>
-          )}
-        </InfoCard>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <InfoCard
+            title="Posture"
+            value={postureData.posture}
+            status={getPostureStatus()}
+            subtitle={`Neck Tilt: ${postureData.neckTilt}`}
+          />
+          <InfoCard
+            title="Screen Distance"
+            value={postureData.distance}
+            status={getDistanceStatus()}
+          />
+          <InfoCard
+            title="Ambient Light"
+            value={`${ambientLight} lx`}
+            status="neutral"
+            subtitle="Mock data (100-1000 lx)"
+          />
+          <InfoCard
+            title="AI Engine"
+            value={isReady ? 'Active' : 'Initializing'}
+            status={isReady ? 'good' : 'neutral'}
+          />
+        </div>
 
-        <InfoCard icon="dashboard" title="Your account">
-          <p className="truncate text-lg font-semibold">{user?.name}</p>
-          <p className="mt-1 truncate text-sm text-slate-500 dark:text-slate-400">{user?.email}</p>
-          <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Member since {memberSince}</p>
-        </InfoCard>
+        <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg border border-gray-200 dark:border-slate-700">
+          <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-slate-100">Live Webcam Feed</h2>
+          <div className="relative bg-black rounded-lg overflow-hidden w-fit">
+            <video
+              ref={videoRef}
+              className="transform scale-x-[-1]"
+              width={320}
+              height={240}
+              playsInline
+              autoPlay
+              muted
+            />
+            {!isReady && !cameraError && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/70">
+                <p className="text-white">Loading camera...</p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
-
-      <section className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <h2 className="text-base font-semibold">What is coming next</h2>
-        <ol className="mt-4 space-y-3">
-          {ROADMAP.map((item) => (
-            <li key={item.module} className="flex items-start gap-3 text-sm">
-              <span className="mt-0.5 rounded-md bg-teal-50 px-2 py-0.5 text-xs font-semibold text-teal-700 dark:bg-teal-500/10 dark:text-teal-300">
-                {item.module}
-              </span>
-              <span className="text-slate-600 dark:text-slate-300">{item.text}</span>
-            </li>
-          ))}
-        </ol>
-      </section>
-    </>
-  )
-}
+    </div>
+  );
+};
