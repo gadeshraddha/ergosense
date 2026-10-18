@@ -251,26 +251,29 @@ export const useRawPosture = (onSample?: (s: RawPostureSample) => void) => {
         const detect = () => {
           if (!mounted || !isVisibleRef.current) { raf = requestAnimationFrame(detect); return; }
           frameCounterRef.current++;
-          if (frameCounterRef.current % 3 !== 0) { raf = requestAnimationFrame(detect); return; }
+          if (frameCounterRef.current % 2 !== 0) { raf = requestAnimationFrame(detect); return; }
           if (videoRef.current && landmarker && videoRef.current.readyState >= 2) {
             const t = performance.now();
             const res = landmarker.detectForVideo(videoRef.current, t);
             if (res.landmarks && res.landmarks.length > 0 && res.landmarks[0]) {
               const lm = res.landmarks[0];
               const nose = lm[0], lsh = lm[11], rsh = lm[12];
-              if (nose && lsh && rsh) {
+              const conf = (nose?.visibility ?? 0) + (lsh?.visibility ?? 0) + (rsh?.visibility ?? 0);
+              if (nose && lsh && rsh && conf > 0) {
                 const shoulderWidth = Math.abs(rsh.x - lsh.x);
                 const shoulderMidY = (lsh.y + rsh.y) / 2;
                 const headForward = (nose.y - shoulderMidY);
                 const shoulderTilt = Math.abs(lsh.y - rsh.y);
-                const movement = 0.01; // placeholder; keep small for demo
-                cb.current?.({
+                const movement = 0.01;
+                const sample = {
                   neck_angle: Number(headForward.toFixed(4)),
                   shoulder_tilt: Number(shoulderTilt.toFixed(4)),
                   head_forward: Number(headForward.toFixed(4)),
                   distance_proxy: Number(shoulderWidth.toFixed(4)),
                   movement: Number(movement.toFixed(4)),
-                });
+                };
+                try { console.debug('[RAW]', sample); } catch {}
+                cb.current?.(sample);
               }
             }
           }

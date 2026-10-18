@@ -16,9 +16,12 @@ export default function Calibration() {
   const { videoRef, isReady, cameraError } = useRawPosture((s) => {
     if (!running || step !== 'calibrating') return
     // feed to backend calibration session
-    void api('/monitor/feed', { method: 'POST', body: s, auth: true }).catch(() => {})
+    void api('/monitor/feed', { method: 'POST', body: s, auth: true }).catch((e) => {
+      try { console.warn('feed failed', e); } catch {}
+    })
     // count valid samples locally
     setValid((v) => v + 1)
+    try { console.debug('sample counted'); } catch {}
   })
 
   useEffect(() => {
