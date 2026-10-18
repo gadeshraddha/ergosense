@@ -3,7 +3,7 @@ import { PoseLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
 
 export interface PostureData {
   posture: 'Upright' | 'Leaning Forward' | 'Looking Up' | 'Waiting';
-  distance: 'Good' | 'Close' | 'Too Close' | 'Waiting';
+  distance: 'Good' | 'Close' | 'Too Close' | 'Too Far' | 'Waiting';
   neckTilt: string;
   timestamp: number;
 }
@@ -18,7 +18,7 @@ export const usePostureTracking = (onDataUpdate: (data: PostureData) => void) =>
   const frameCounterRef = useRef(0);
   const lastUpdateTimeRef = useRef(0);
   const lastPostureRef = useRef<'Upright' | 'Leaning Forward' | 'Looking Up' | 'Waiting' | null>(null);
-  const lastDistanceRef = useRef<'Good' | 'Close' | 'Too Close' | 'Waiting' | null>(null);
+  const lastDistanceRef = useRef<'Good' | 'Close' | 'Too Close' | 'Too Far' | 'Waiting' | null>(null);
   const lastTsRef = useRef(0);
   
   useEffect(() => {
@@ -125,7 +125,7 @@ export const usePostureTracking = (onDataUpdate: (data: PostureData) => void) =>
               }
 
               const shoulderWidth = Math.abs(rightShoulder.x - leftShoulder.x);
-                const estimatedDistance: 'Good' | 'Close' | 'Too Close' = shoulderWidth < 0.24 ? 'Good' : shoulderWidth < 0.30 ? 'Close' : 'Too Close';
+                const estimatedDistance: 'Good' | 'Close' | 'Too Close' | 'Too Far' = shoulderWidth > 0.45 ? 'Too Close' : shoulderWidth > 0.35 ? 'Close' : shoulderWidth >= 0.25 ? 'Good' : 'Too Far';
               try { console.debug('[DIST]', { shoulderWidth: shoulderWidth.toFixed(3) }); } catch {}
 
               const shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2;

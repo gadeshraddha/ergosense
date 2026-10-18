@@ -58,6 +58,7 @@ export const Dashboard = () => {
     if (postureData.distance === 'Good') return 'good';
     if (postureData.distance === 'Close') return 'warning';
     if (postureData.distance === 'Too Close') return 'danger';
+    if (postureData.distance === 'Too Far') return 'neutral';
     return 'neutral';
   };
 
