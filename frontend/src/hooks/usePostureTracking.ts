@@ -125,7 +125,14 @@ export const usePostureTracking = (onDataUpdate: (data: PostureData) => void) =>
               }
 
               const shoulderWidth = Math.abs(rightShoulder.x - leftShoulder.x);
-                const estimatedDistance: 'Good' | 'Close' | 'Too Close' | 'Too Far' = shoulderWidth > 0.45 ? 'Too Close' : shoulderWidth >= 0.30 ? 'Close' : shoulderWidth >= 0.15 ? 'Good' : 'Too Far';
+                const estimatedDistance: 'Good' | 'Close' | 'Too Close' | 'Too Far' =
+                  shoulderWidth > 0.45
+                    ? 'Too Close'
+                    : shoulderWidth >= 0.30
+                    ? 'Close'
+                    : shoulderWidth >= 0.15
+                    ? 'Good'
+                    : 'Too Far';
               try { console.debug('[DIST]', { shoulderWidth: shoulderWidth.toFixed(3) }); } catch {}
 
               const shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2;
