@@ -127,16 +127,16 @@ export const usePostureTracking = (onDataUpdate: (data: PostureData) => void) =>
               const shoulderWidth = Math.abs(rightShoulder.x - leftShoulder.x);
               const faceHeight = Math.abs(nose.y - (leftShoulder.y + rightShoulder.y) / 2);
               const faceArea = shoulderWidth * Math.max(0.01, faceHeight);
-                const estimatedDistance: 'Good' | 'Close' | 'Too Close' = faceArea > 0.12 ? 'Too Close' : faceArea > 0.08 ? 'Close' : 'Good';
+                const estimatedDistance: 'Good' | 'Close' | 'Too Close' = shoulderWidth > 0.32 ? 'Too Close' : shoulderWidth > 0.26 ? 'Close' : 'Good';
               try { console.debug('[DIST]', { shoulderWidth: shoulderWidth.toFixed(3), faceArea: faceArea.toFixed(3) }); } catch {}
 
               const shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2;
               const neckTilt = nose.y - shoulderMidY;
               
               let postureStatus: 'Upright' | 'Leaning Forward' | 'Looking Up';
-              if (nose.y > shoulderMidY + 0.1) {
+              if (nose.y > shoulderMidY + 0.05) {
                 postureStatus = 'Leaning Forward';
-              } else if (nose.y < shoulderMidY - 0.05) {
+              } else if (nose.y < shoulderMidY - 0.08) {
                 postureStatus = 'Looking Up';
               } else {
                 postureStatus = 'Upright';
