@@ -132,9 +132,9 @@ export const usePostureTracking = (onDataUpdate: (data: PostureData) => void) =>
               const neckTilt = nose.y - shoulderMidY;
               
               let postureStatus: 'Upright' | 'Leaning Forward' | 'Looking Up';
-              if (nose.y > shoulderMidY + 0.04) {
+              if (nose.y > shoulderMidY + 0.03) {
                 postureStatus = 'Leaning Forward';
-              } else if (nose.y < shoulderMidY - 0.12) {
+              } else if (nose.y < shoulderMidY - 0.15) {
                 postureStatus = 'Looking Up';
               } else {
                 postureStatus = 'Upright';
