@@ -19,6 +19,7 @@ export const usePostureTracking = (onDataUpdate: (data: PostureData) => void) =>
   const lastUpdateTimeRef = useRef(0);
   const lastPostureRef = useRef<'Upright' | 'Leaning Forward' | 'Looking Up' | 'Waiting' | null>(null);
   const lastDistanceRef = useRef<'Good' | 'Close' | 'Too Close' | 'Waiting' | null>(null);
+  const lastTsRef = useRef(0);
   
   useEffect(() => {
     callbackRef.current = onDataUpdate;
@@ -124,7 +125,10 @@ export const usePostureTracking = (onDataUpdate: (data: PostureData) => void) =>
               }
 
               const shoulderWidth = Math.abs(rightShoulder.x - leftShoulder.x);
-              const estimatedDistance = shoulderWidth < 0.2 ? 'Too Close' : shoulderWidth < 0.3 ? 'Close' : 'Good';
+              const faceHeight = Math.abs(nose.y - (leftShoulder.y + rightShoulder.y) / 2);
+              const faceArea = shoulderWidth * Math.max(0.01, faceHeight);
+                const estimatedDistance: 'Good' | 'Close' | 'Too Close' = faceArea > 0.12 ? 'Too Close' : faceArea > 0.08 ? 'Close' : 'Good';
+              try { console.debug('[DIST]', { shoulderWidth: shoulderWidth.toFixed(3), faceArea: faceArea.toFixed(3) }); } catch {}
 
               const shoulderMidY = (leftShoulder.y + rightShoulder.y) / 2;
               const neckTilt = nose.y - shoulderMidY;
@@ -140,18 +144,20 @@ export const usePostureTracking = (onDataUpdate: (data: PostureData) => void) =>
 
               const now = Date.now();
               const hasChanged = postureStatus !== lastPostureRef.current || estimatedDistance !== lastDistanceRef.current;
-              const shouldThrottle = now - lastUpdateTimeRef.current < 250 && !hasChanged;
-              
-              if (!shouldThrottle) {
+              if (hasChanged || now - lastUpdateTimeRef.current > 200) {
                 lastPostureRef.current = postureStatus;
                 lastDistanceRef.current = estimatedDistance;
                 lastUpdateTimeRef.current = now;
-                callbackRef.current({
+                const ts = now;
+                lastTsRef.current = ts;
+                const payload = {
                   posture: postureStatus,
                   distance: estimatedDistance,
                   neckTilt: neckTilt.toFixed(3),
-                  timestamp: now,
-                });
+                  timestamp: ts,
+                };
+                try { console.debug('[DASH]', payload); } catch {}
+                callbackRef.current(payload);
               }
             }
           }
