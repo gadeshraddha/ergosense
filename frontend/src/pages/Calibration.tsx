@@ -17,7 +17,7 @@ export default function Calibration() {
     if (!running || step !== 'calibrating') return
     // feed to backend calibration session
     void api('/monitor/feed', { method: 'POST', body: s, auth: true }).catch(() => {})
-    // also track local count
+    // count valid samples locally
     setValid((v) => v + 1)
   })
 

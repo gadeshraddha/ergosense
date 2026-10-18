@@ -234,11 +234,14 @@ export const useRawPosture = (onSample?: (s: RawPostureSample) => void) => {
           },
           runningMode: 'VIDEO',
           numPoses: 1,
+          outputSegmentationMasks: false,
         });
-        stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
         if (!mounted) { if (stream) stream.getTracks().forEach(t => t.stop()); return; }
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          videoRef.current.width = 640;
+          videoRef.current.height = 480;
           await new Promise<void>(res => { if (videoRef.current) videoRef.current.onloadedmetadata = () => res(); });
           await videoRef.current.play();
         }
@@ -252,10 +255,10 @@ export const useRawPosture = (onSample?: (s: RawPostureSample) => void) => {
           if (videoRef.current && landmarker && videoRef.current.readyState >= 2) {
             const t = performance.now();
             const res = landmarker.detectForVideo(videoRef.current, t);
-            if (res.landmarks && res.landmarks[0]) {
+            if (res.landmarks && res.landmarks.length > 0 && res.landmarks[0]) {
               const lm = res.landmarks[0];
-              const nose = lm[0], lsh = lm[11], rsh = lm[12], leye = lm[2], reye = lm[5];
-              if (nose && lsh && rsh && leye && reye) {
+              const nose = lm[0], lsh = lm[11], rsh = lm[12];
+              if (nose && lsh && rsh) {
                 const shoulderWidth = Math.abs(rsh.x - lsh.x);
                 const shoulderMidY = (lsh.y + rsh.y) / 2;
                 const headForward = (nose.y - shoulderMidY);
