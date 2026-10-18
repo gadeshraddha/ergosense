@@ -258,8 +258,7 @@ export const useRawPosture = (onSample?: (s: RawPostureSample) => void) => {
             if (res.landmarks && res.landmarks.length > 0 && res.landmarks[0]) {
               const lm = res.landmarks[0];
               const nose = lm[0], lsh = lm[11], rsh = lm[12];
-              const conf = (nose?.visibility ?? 0) + (lsh?.visibility ?? 0) + (rsh?.visibility ?? 0);
-              if (nose && lsh && rsh && conf > 0) {
+              if (nose && lsh && rsh) {
                 const shoulderWidth = Math.abs(rsh.x - lsh.x);
                 const shoulderMidY = (lsh.y + rsh.y) / 2;
                 const headForward = (nose.y - shoulderMidY);
@@ -272,7 +271,6 @@ export const useRawPosture = (onSample?: (s: RawPostureSample) => void) => {
                   distance_proxy: Number(shoulderWidth.toFixed(4)),
                   movement: Number(movement.toFixed(4)),
                 };
-                try { console.debug('[RAW]', sample); } catch {}
                 cb.current?.(sample);
               }
             }

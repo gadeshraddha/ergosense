@@ -35,7 +35,9 @@ export const Dashboard = () => {
   });
   const [ambientLight, setAmbientLight] = useState<number>(500);
 
-  const { videoRef, isReady, cameraError } = usePostureTracking(setPostureData);
+  const { videoRef, isReady, cameraError } = usePostureTracking((d) => {
+    setPostureData((prev) => (prev.timestamp === d.timestamp ? prev : d));
+  });
 
   useEffect(() => {
     const interval = setInterval(() => {
