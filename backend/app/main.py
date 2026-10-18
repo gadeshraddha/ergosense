@@ -1,0 +1,43 @@
+"""ErgoSense API entry point.
+
+Run from the `backend` folder:
+    uvicorn app.main:app --reload --port 8000
+Interactive API docs: http://localhost:8000/docs
+"""
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from .config import settings
+from .database import init_db
+from .routers import auth
+from .schemas import HealthResponse
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(title=f"{settings.app_name} API", version="0.1.0", lifespan=lifespan)
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origin_list,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @app.get("/api/health", response_model=HealthResponse, tags=["system"])
+    def health() -> HealthResponse:
+        return HealthResponse(status="ok", mock=settings.mock, app=settings.app_name)
+
+    app.include_router(auth.router)
+    return app
+
+
+app = create_app()
