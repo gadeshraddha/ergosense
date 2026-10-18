@@ -195,3 +195,99 @@ export const usePostureTracking = (onDataUpdate: (data: PostureData) => void) =>
 
   return { videoRef, isReady, cameraError };
 };
+
+export interface RawPostureSample {
+  neck_angle: number | null;
+  shoulder_tilt: number | null;
+  head_forward: number | null;
+  distance_proxy: number | null;
+  movement: number | null;
+}
+
+export const useRawPosture = (onSample?: (s: RawPostureSample) => void) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isReady, setIsReady] = useState(false);
+  const [cameraError, setCameraError] = useState<Error | null>(null);
+  const isVisibleRef = useRef(true);
+  const frameCounterRef = useRef(0);
+  const cb = useRef(onSample);
+  useEffect(() => { cb.current = onSample; }, [onSample]);
+
+  useEffect(() => {
+    const onVis = () => { isVisibleRef.current = !document.hidden; };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  useEffect(() => {
+    let raf: number;
+    let landmarker: PoseLandmarker | null = null;
+    let stream: MediaStream | null = null;
+    let mounted = true;
+    const start = async () => {
+      try {
+        const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm');
+        landmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+            delegate: 'GPU',
+          },
+          runningMode: 'VIDEO',
+          numPoses: 1,
+        });
+        stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+        if (!mounted) { if (stream) stream.getTracks().forEach(t => t.stop()); return; }
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await new Promise<void>(res => { if (videoRef.current) videoRef.current.onloadedmetadata = () => res(); });
+          await videoRef.current.play();
+        }
+        setIsReady(true);
+        setCameraError(null);
+        frameCounterRef.current = 0;
+        const detect = () => {
+          if (!mounted || !isVisibleRef.current) { raf = requestAnimationFrame(detect); return; }
+          frameCounterRef.current++;
+          if (frameCounterRef.current % 3 !== 0) { raf = requestAnimationFrame(detect); return; }
+          if (videoRef.current && landmarker && videoRef.current.readyState >= 2) {
+            const t = performance.now();
+            const res = landmarker.detectForVideo(videoRef.current, t);
+            if (res.landmarks && res.landmarks[0]) {
+              const lm = res.landmarks[0];
+              const nose = lm[0], lsh = lm[11], rsh = lm[12], leye = lm[2], reye = lm[5];
+              if (nose && lsh && rsh && leye && reye) {
+                const shoulderWidth = Math.abs(rsh.x - lsh.x);
+                const shoulderMidY = (lsh.y + rsh.y) / 2;
+                const headForward = (nose.y - shoulderMidY);
+                const shoulderTilt = Math.abs(lsh.y - rsh.y);
+                const movement = 0.01; // placeholder; keep small for demo
+                cb.current?.({
+                  neck_angle: Number(headForward.toFixed(4)),
+                  shoulder_tilt: Number(shoulderTilt.toFixed(4)),
+                  head_forward: Number(headForward.toFixed(4)),
+                  distance_proxy: Number(shoulderWidth.toFixed(4)),
+                  movement: Number(movement.toFixed(4)),
+                });
+              }
+            }
+          }
+          raf = requestAnimationFrame(detect);
+        };
+        detect();
+      } catch (e) {
+        if (!mounted) return;
+        setIsReady(false);
+        setCameraError(e as Error);
+      }
+    };
+    start();
+    return () => {
+      mounted = false;
+      cancelAnimationFrame(raf);
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      if (videoRef.current) { try { videoRef.current.srcObject = null; } catch {} }
+      if (landmarker) { try { landmarker.close(); } catch {}; landmarker = null; }
+    };
+  }, []);
+  return { videoRef, isReady, cameraError };
+};
