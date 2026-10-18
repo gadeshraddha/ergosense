@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import init_db
-from .routers import auth
+from .routers import auth, calibration, monitor, sessions
 from .schemas import HealthResponse
 
 
@@ -37,6 +37,9 @@ def create_app() -> FastAPI:
         return HealthResponse(status="ok", mock=settings.mock, app=settings.app_name)
 
     app.include_router(auth.router)
+    app.include_router(calibration.router)
+    app.include_router(monitor.router)
+    app.include_router(sessions.router)
     return app
 
 

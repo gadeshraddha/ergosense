@@ -57,3 +57,95 @@ class HealthResponse(BaseModel):
     status: str
     mock: bool
     app: str
+
+
+class BaselineStats(BaseModel):
+    mean: float
+    std: float
+    median: float
+    mad: float
+    n: int
+
+
+class BaselineOut(BaseModel):
+    present: bool
+    stats: dict[str, BaselineStats] = {}
+    valid_samples: int = 0
+    quality: float = 0.0
+    created_at: datetime | None = None
+
+
+class CalibrationStartRequest(BaseModel):
+    demo: bool | None = False
+
+
+class CalibrationStartResponse(BaseModel):
+    ok: bool
+    status_url: str
+    duration_s: int
+
+
+class CalibrationStatus(BaseModel):
+    running: bool
+    elapsed_s: float
+    duration_s: int
+    progress_pct: float
+    valid_samples: int
+    quality: float
+    reason: str | None = None
+    completed: bool
+    baseline_ok: bool
+    message: str | None = None
+
+
+class CalibrationCancelResponse(BaseModel):
+    ok: bool
+
+
+class DriftOut(BaseModel):
+    level: str
+    feature: str
+    minutes: float
+
+
+class FactorScoresOut(BaseModel):
+    posture: float
+    screen: float
+    lighting: float
+    movement: float
+
+
+class LiveSnapshot(BaseModel):
+    ts: datetime
+    monitoring: bool
+    mode: str
+    calibrated: bool
+    present: bool
+    features: dict
+    lux: float | None
+    factors: FactorScoresOut
+    score: float
+    drift: DriftOut
+    insight: str
+    session: dict
+    devices: dict
+
+
+class SessionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    start: datetime
+    end: datetime | None = None
+    avg_score: float | None = None
+    break_count: int
+
+
+class EventOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    ts: datetime
+    type: str
+    severity: str
+    message: str
