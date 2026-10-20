@@ -11,6 +11,42 @@ def test_flat_samples_no_drift_trigger():
     assert "neck_angle" in res.stats
 
 
+def test_std_floor_prevents_hypersensitive_z():
+    """A perfectly still calibration must not make a tiny shift read as red."""
+    samples = [
+        {"neck_angle": 0.1, "head_forward": 0.1, "shoulder_tilt": 0.01, "distance_proxy": 0.25, "movement": 0.02}
+        for _ in range(40)
+    ]
+    res = baseline.compute_baseline(
+        samples,
+        min_samples=30,
+        max_movement_std=0.08,
+        std_floors={"distance_proxy": 0.02, "neck_angle": 0.012, "head_forward": 0.012},
+    )
+    assert res.ok
+    # Raw std here is 0.0; the floor must lift it so z stays finite/sane.
+    stat = res.stats["distance_proxy"]
+    assert stat.std >= 0.02
+    # A 0.03 shift is ~1.5 sigma (attention), not a runaway 3+ (red).
+    assert stat.z(0.28) <= 2.0
+
+
+def test_stats_from_json_applies_std_floor():
+    data = {
+        "stats": {
+            "distance_proxy": {"mean": 0.37, "std": 0.0066, "median": 0.37, "mad": 0.001, "n": 900}
+        }
+    }
+    no_floor = baseline.stats_from_json(data)
+    assert no_floor["distance_proxy"].z(0.40) > 4.0  # hyper-sensitive
+
+    floored = baseline.stats_from_json(
+        data, std_floors={"distance_proxy": 0.02, "neck_angle": 0.012}
+    )
+    assert floored["distance_proxy"].std == 0.02
+    assert floored["distance_proxy"].z(0.40) < 2.0
+
+
 def test_drift_detection_ramp_flags():
     det = drift.DriftDetector(
         feature="neck_angle",

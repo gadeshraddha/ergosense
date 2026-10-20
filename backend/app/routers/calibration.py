@@ -167,6 +167,7 @@ def status_cal(
             cs.samples,
             min_samples=settings.calibration_min_samples,
             max_movement_std=settings.calibration_max_movement_std,
+            std_floors=settings.baseline_std_floors,
         )
         cs.result = res
         if res.ok:

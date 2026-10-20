@@ -1,144 +1,176 @@
-import { useState } from 'react';
-import { usePostureTracking } from '../hooks/usePostureTracking';
-import type { PostureData } from '../hooks/usePostureTracking';
-import { useMonitoring } from '../monitoring/MonitoringProvider';
+import { useEffect, useState } from 'react'
+import { api } from '../api/client'
+import type { AlertEvent } from '../api/types'
+import CameraPreview from '../components/CameraPreview'
+import PageHeader from '../components/PageHeader'
+import { Card, EmptyState, ScoreChip, StatCard, StatusBadge, scoreTone } from '../components/ui'
+import { useMonitoring } from '../monitoring/MonitoringProvider'
 
-interface InfoCardProps {
-  title: string;
-  value: string;
-  status?: 'good' | 'warning' | 'danger' | 'neutral';
-  subtitle?: string;
+const SEVERITY_TONE: Record<string, 'neutral' | 'warning' | 'danger'> = {
+  info: 'neutral',
+  warning: 'warning',
+  danger: 'danger',
 }
 
-const InfoCard = ({ title, value, status = 'neutral', subtitle }: InfoCardProps) => {
-  const statusColors = {
-    good: 'text-emerald-600 dark:text-emerald-400',
-    warning: 'text-yellow-600 dark:text-yellow-400',
-    danger: 'text-red-600 dark:text-red-400',
-    neutral: 'text-blue-600 dark:text-blue-400',
-  };
+/** The landing page: the live Ergo Score, insight, devices and recent alerts. */
+export default function Dashboard() {
+  const { data: live, cameraStream, cameraReady, cameraError } = useMonitoring()
+  const [alerts, setAlerts] = useState<AlertEvent[]>([])
+
+  useEffect(() => {
+    let active = true
+    const load = () =>
+      api<AlertEvent[]>('/alerts')
+        .then((rows) => active && setAlerts(rows.slice(0, 5)))
+        .catch(() => undefined)
+    void load()
+    const id = window.setInterval(load, 10000)
+    return () => {
+      active = false
+      window.clearInterval(id)
+    }
+  }, [])
+
+  const score = live?.score ?? null
+  const realMode = live?.mode === 'real'
 
   return (
-    <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg border border-gray-200 dark:border-slate-700">
-      <h3 className="text-gray-600 dark:text-slate-300 text-sm uppercase tracking-wide mb-2">{title}</h3>
-      <p className={`text-3xl font-bold ${statusColors[status]} mb-1`}>{value}</p>
-      {subtitle && <p className="text-gray-500 dark:text-slate-400 text-xs">{subtitle}</p>}
-    </div>
-  );
-};
+    <>
+      <PageHeader
+        title="Dashboard"
+        description="Your live Ergo Score, what it means, and what the system is doing right now."
+        actions={
+          <StatusBadge tone={live?.monitoring ? 'good' : 'neutral'}>
+            {live?.monitoring ? 'Monitoring' : 'Stopped'}
+          </StatusBadge>
+        }
+      />
 
-export const Dashboard = () => {
-  const [postureData, setPostureData] = useState<PostureData>({
-    posture: 'Waiting',
-    distance: 'Waiting',
-    neckTilt: '0.000',
-    timestamp: Date.now(),
-  });
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="Ergo Score"
+          value={
+            score == null ? (
+              '—'
+            ) : (
+              <span className="flex items-center gap-2">
+                {Math.round(score)} <ScoreChip score={score} />
+              </span>
+            )
+          }
+          tone={score == null ? 'neutral' : scoreTone(score)}
+          caption={live?.calibrated ? 'Personal baseline active' : 'Not calibrated yet'}
+        />
+        <StatCard
+          label="Posture"
+          value={live?.factors ? Math.round(live.factors.posture) : '—'}
+          tone={live?.factors ? scoreTone(live.factors.posture) : 'neutral'}
+          caption="How you sit vs your normal"
+        />
+        <StatCard
+          label="Ambient light"
+          value={live?.lux != null ? Math.round(live.lux) : '—'}
+          unit={live?.lux != null ? 'lx' : undefined}
+          caption={
+            live?.lux == null
+              ? 'No light reading'
+              : live.mode === 'mock'
+                ? 'Simulated (mock)'
+                : live.devices?.esp32 === 'ok'
+                  ? 'ESP32 live'
+                  : 'From the webcam'
+          }
+        />
+        <StatCard
+          label="Drift"
+          value={live?.drift?.level ?? 'none'}
+          tone={
+            live?.drift?.level === 'significant'
+              ? 'danger'
+              : live?.drift?.level === 'mild'
+                ? 'warning'
+                : 'good'
+          }
+          caption={
+            live?.drift && live.drift.level !== 'none'
+              ? `${live.drift.feature.replace('_', ' ')} • ${Math.round(live.drift.minutes)} min`
+              : 'No gradual drift detected'
+          }
+        />
+      </div>
 
-  const { data: live } = useMonitoring();
-
-  const { videoRef, isReady, cameraError } = usePostureTracking((d) => {
-    setPostureData(d);
-  });
-
-  const getScoreStatus = (): 'good' | 'warning' | 'danger' | 'neutral' => {
-    if (!live) return 'neutral';
-    if (live.score >= 80) return 'good';
-    if (live.score >= 60) return 'warning';
-    return 'danger';
-  };
-
-  const getPostureStatus = (): 'good' | 'warning' | 'danger' | 'neutral' => {
-    if (postureData.posture === 'Upright') return 'good';
-    if (postureData.posture === 'Leaning Forward') return 'warning';
-    if (postureData.posture === 'Looking Up') return 'warning';
-    return 'neutral';
-  };
-
-  const getDistanceStatus = (): 'good' | 'warning' | 'danger' | 'neutral' => {
-    if (postureData.distance === 'Good') return 'good';
-    if (postureData.distance === 'Close') return 'warning';
-    if (postureData.distance === 'Too Close') return 'danger';
-    if (postureData.distance === 'Too Far') return 'neutral';
-    return 'neutral';
-  };
-
-  return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 text-gray-900 dark:text-slate-100 p-6">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold mb-8 text-gray-900 dark:text-slate-100">ErgoSense Dashboard</h1>
-
-        {cameraError && (
-          <div className="bg-red-50 dark:bg-red-900/50 border border-red-300 dark:border-red-500 rounded-lg p-4 mb-6">
-            <p className="text-red-700 dark:text-red-200 font-semibold">Camera Error</p>
-            <p className="text-red-600 dark:text-red-300 text-sm mt-1">
-              {cameraError.message || 'Unable to access camera. Please check permissions.'}
-            </p>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <InfoCard
-            title="Posture"
-            value={postureData.posture}
-            status={getPostureStatus()}
-            subtitle={`Neck Tilt: ${postureData.neckTilt}`}
-          />
-          <InfoCard
-            title="Screen Distance"
-            value={postureData.distance}
-            status={getDistanceStatus()}
-          />
-          <InfoCard
-            title="Ambient Light"
-            value={live?.lux != null ? `${Math.round(live.lux)} lx` : '—'}
-            status="neutral"
-            subtitle={live?.lux != null ? (live.mode === 'mock' ? 'Simulated (mock mode)' : 'ESP32 live') : 'No sensor reading'}
-          />
-          <InfoCard
-            title="Ergo Score"
-            value={live ? `${Math.round(live.score)}` : '—'}
-            status={getScoreStatus()}
-            subtitle={live ? `${live.calibrated ? 'Calibrated' : 'Not calibrated'} · ${live.mode}` : 'Waiting for live data'}
-          />
-        </div>
-
-        <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg border border-gray-200 dark:border-slate-700 mb-8">
-          <h2 className="text-xl font-semibold mb-2 text-gray-900 dark:text-slate-100">Live Insight</h2>
-          <p className="text-gray-600 dark:text-slate-300 text-sm">
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card title="Live insight" className="lg:col-span-2">
+          <p className="text-sm text-slate-600 dark:text-slate-300">
             {live ? live.insight : 'Start monitoring to see your live Ergo Score.'}
           </p>
           {live && (
-            <div className="mt-4 flex flex-wrap gap-3 text-xs">
+            <div className="mt-4 flex flex-wrap gap-2">
               {Object.entries(live.devices).map(([device, state]) => (
-                <span key={device} className="rounded-full border border-gray-200 dark:border-slate-600 px-3 py-1 text-gray-600 dark:text-slate-300">
+                <StatusBadge
+                  key={device}
+                  tone={state === 'ok' ? 'good' : state === 'supported' ? 'good' : 'neutral'}
+                >
                   {device}: {state}
-                </span>
+                </StatusBadge>
               ))}
             </div>
           )}
-        </div>
+        </Card>
 
-        <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg border border-gray-200 dark:border-slate-700">
-          <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-slate-100">Live Webcam Feed</h2>
-          <div className="relative bg-black rounded-lg overflow-hidden w-fit">
-            <video
-              ref={videoRef}
-              className="transform scale-x-[-1]"
-              width={320}
-              height={240}
-              playsInline
-              autoPlay
-              muted
+        <Card title="Recent alerts">
+          {alerts.length === 0 ? (
+            <EmptyState
+              title="No alerts yet"
+              message="ErgoSense will quietly tell you here when something is worth a nudge."
             />
-            {!isReady && !cameraError && (
-              <div className="absolute inset-0 flex items-center justify-center bg-black/70">
-                <p className="text-white">Loading camera...</p>
-              </div>
-            )}
-          </div>
-        </div>
+          ) : (
+            <ul className="space-y-3">
+              {alerts.map((a) => (
+                <li key={a.id} className="text-sm">
+                  <div className="flex items-center gap-2">
+                    <StatusBadge tone={SEVERITY_TONE[a.severity] ?? 'neutral'}>{a.type}</StatusBadge>
+                    <span className="text-xs text-slate-400">
+                      {new Date(a.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-slate-600 dark:text-slate-300">{a.message}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
       </div>
-    </div>
-  );
-};
+
+      <div className="mt-4">
+        <Card title="Webcam (real mode)">
+          {realMode ? (
+            <>
+              <div className="relative w-fit overflow-hidden rounded-lg bg-black">
+                <CameraPreview stream={cameraStream} />
+                {!cameraReady && !cameraError && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-xs text-white">
+                    Starting camera…
+                  </div>
+                )}
+              </div>
+              {cameraError && (
+                <p className="mt-2 text-xs text-rose-600 dark:text-rose-400">
+                  {cameraError.message || 'Camera unavailable.'}
+                </p>
+              )}
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                One camera serves both posture and ambient light, analysed in your browser.
+              </p>
+            </>
+          ) : (
+            <EmptyState
+              title="Mock mode"
+              message="Switch to real mode from Alerts → Demo controls to use the webcam. Mock mode streams synthetic posture instead."
+            />
+          )}
+        </Card>
+      </div>
+    </>
+  )
+}

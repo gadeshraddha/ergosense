@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { MonitoringProvider } from '../monitoring/MonitoringProvider'
+import ErgoCompanion from './ErgoCompanion'
 import Sidebar from './Sidebar'
 import Topbar from './Topbar'
 
@@ -31,6 +32,7 @@ export default function Layout() {
             <Outlet />
           </main>
         </div>
+        <ErgoCompanion />
       </div>
     </MonitoringProvider>
   )

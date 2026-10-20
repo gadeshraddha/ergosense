@@ -31,6 +31,7 @@ def list_alerts(
 @router.post("/test-voice")
 def test_voice(user: User = Depends(get_current_user)) -> dict:
     rt = manager.ensure(user.id)
+    rt.voice.retry()  # re-attempt TTS if a previous init hiccuped
     spoke = rt.voice.speak(
         "This is ErgoSense. Voice feedback is working.", force=True
     )

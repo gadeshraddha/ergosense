@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   CartesianGrid,
   Line,
@@ -14,10 +14,7 @@ import type { PostureSummary, PostureTrend } from '../api/types'
 import PageHeader from '../components/PageHeader'
 import { Card, EmptyState, StatCard, StatusBadge, scoreTone } from '../components/ui'
 import { useMonitoring } from '../monitoring/MonitoringProvider'
-import { useRawPosture } from '../hooks/usePostureTracking'
-import type { RawPostureSample } from '../hooks/usePostureTracking'
-
-const FEED_INTERVAL_MS = 400
+import CameraPreview from '../components/CameraPreview'
 
 const STATUS_META: Record<string, { label: string; bar: string; tone: 'good' | 'warning' | 'danger' | 'neutral' }> = {
   good: { label: 'In your band', bar: 'bg-emerald-500', tone: 'good' },
@@ -31,29 +28,15 @@ function fmt(value: number | null, digits = 3): string {
 }
 
 export default function Posture() {
-  const { data: live } = useMonitoring()
+  const { data: live, cameraStream, cameraReady, cameraError } = useMonitoring()
   const [summary, setSummary] = useState<PostureSummary | null>(null)
   const [trend, setTrend] = useState<PostureTrend | null>(null)
   const [range, setRange] = useState<'1h' | 'today' | '7d'>('1h')
   const [error, setError] = useState<string | null>(null)
-  const lastSentRef = useRef(0)
 
-  // In real mode the browser's webcam is the posture source: send each frame to
-  // the backend so the engine can score it (the <video> below is the required
-  // hidden element the camera stream is attached to).
+  // In real mode the shared app-wide camera (see MonitoringProvider) posts
+  // posture frames and ambient light to the engine for scoring.
   const realMode = live?.mode === 'real'
-  const { videoRef, isReady, cameraError } = useRawPosture(
-    useCallback(
-      (s: RawPostureSample) => {
-        if (!realMode) return
-        const now = Date.now()
-        if (now - lastSentRef.current < FEED_INTERVAL_MS) return
-        lastSentRef.current = now
-        void api('/monitor/feed', { method: 'POST', body: s }).catch(() => undefined)
-      },
-      [realMode],
-    ),
-  )
 
   const load = useCallback(async () => {
     try {
@@ -147,7 +130,7 @@ export default function Posture() {
           label="Ambient light"
           value={live?.lux != null ? Math.round(live.lux) : summary?.source === 'stored' ? '—' : '—'}
           unit={live?.lux != null ? 'lx' : undefined}
-          caption={live?.lux == null ? 'No sensor reading' : live.mode === 'mock' ? 'Simulated (mock)' : 'ESP32 live'}
+          caption={live?.lux == null ? 'No sensor reading' : live.mode === 'mock' ? 'Simulated (mock)' : live.devices?.esp32 === 'ok' ? 'ESP32 live' : 'From the webcam'}
         />
       </div>
 
@@ -323,16 +306,8 @@ export default function Posture() {
           {realMode ? (
             <>
               <div className="relative w-fit overflow-hidden rounded-lg bg-black">
-                <video
-                  ref={videoRef}
-                  className="transform scale-x-[-1]"
-                  width={320}
-                  height={240}
-                  playsInline
-                  autoPlay
-                  muted
-                />
-                {!isReady && !cameraError && (
+                <CameraPreview stream={cameraStream} />
+                {!cameraReady && !cameraError && (
                   <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-xs text-white">
                     Starting camera…
                   </div>
@@ -344,7 +319,8 @@ export default function Posture() {
                 </p>
               )}
               <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                Frames are analysed in your browser and sent to the engine for scoring.
+                Frames are analysed in your browser — for posture <em>and</em> ambient light — and
+                sent to the engine for scoring.
               </p>
             </>
           ) : (

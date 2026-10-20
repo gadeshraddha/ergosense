@@ -83,6 +83,22 @@ def test_decide_quiet_when_fine():
     assert actions == []
 
 
+def test_decide_speaks_welcome_when_pending():
+    actions = decide.decide_actions(
+        {
+            "drift": {"level": "none"},
+            "lux": 500,
+            "low_light_lux": 250,
+            "session": {"since_break_minutes": 0},
+            "welcome": "Welcome, I am Ergo.",
+        }
+    )
+    assert len(actions) == 1
+    assert actions[0].kind == "speak"
+    assert actions[0].reason == "welcome"
+    assert actions[0].message == "Welcome, I am Ergo."
+
+
 # --- sensors --------------------------------------------------------------
 def test_mock_sensors_shape_and_drift():
     s = MockSensors(simulate_drift=True, drift_rate=0.2, seed=1)
@@ -127,6 +143,35 @@ def test_voice_gating_and_mute():
     v.mute(10)
     assert v.muted() is True
     assert v.can_speak("another") is False
+
+
+def test_voice_speak_self_heals_from_init_failure(monkeypatch):
+    """A transient init failure must not silence voice forever."""
+    v = VoiceEngine(enabled=True, cooldown_seconds=0, repeat_seconds=0)
+    v._supported = False
+    v._engine = None
+    assert v.status() == "unavailable"
+
+    class _FakeEngine:
+        def __init__(self):
+            self.spoken = []
+
+        def setProperty(self, *_):
+            pass
+
+        def say(self, msg):
+            self.spoken.append(msg)
+
+        def runAndWait(self):
+            pass
+
+    fake = _FakeEngine()
+    monkeypatch.setattr("app.engine.actuators.voice.pyttsx3", type("M", (), {"init": staticmethod(lambda: fake)}))
+    monkeypatch.setattr("app.engine.actuators.voice._HAVE_TTS", True)
+
+    assert v.retry() is True
+    assert v.status() == "ok"
+    assert v.speak("hi", force=True) is True
 
 
 # --- runtime snapshot -----------------------------------------------------
@@ -181,4 +226,49 @@ def test_mark_break_resets_break_clock():
     stale = rt._last_active
     rt.mark_break()
     assert rt._last_active > stale
+
+
+def test_runtime_welcome_speaks_once(monkeypatch):
+    rt = UserRuntime(user_id=999)
+    rt.voice._supported = True
+    rt._welcome_pending = True
+    spoken: list[str] = []
+    events: list[tuple] = []
+    monkeypatch.setattr(rt.voice, "speak", lambda msg, force=False: spoken.append((msg, force)) or True)
+    monkeypatch.setattr(rt, "_write_event", lambda *a, **k: events.append(a))
+
+    assert rt.welcome() is True
+    assert rt._welcome_pending is False
+    assert spoken and spoken[0][1] is True  # force=True bypasses cooldowns
+    assert events and events[0][1] == "voice" and events[0][4] == "welcome"
+
+
+def test_runtime_welcome_quiet_when_muted(monkeypatch):
+    rt = UserRuntime(user_id=999)
+    rt._welcome_pending = True
+    monkeypatch.setattr(rt.voice, "speak", lambda msg, force=False: False)
+    assert rt.welcome() is False
+    assert rt._welcome_pending is False  # still consumed, so it will not repeat
+
+
+def test_prefer_browser_lux_when_esp32_absent():
+    rt = UserRuntime(user_id=999)
+    # No ESP32 hardware -> reader reports "mock"; a fresh webcam reading wins.
+    assert rt._prefer_browser_lux(420.0, "mock") == (420.0, "mock")
+    rt._browser_lux = 155.0
+    rt._browser_lux_ts = time.monotonic()
+    assert rt._prefer_browser_lux(420.0, "mock") == (155.0, "webcam")
+    assert rt._prefer_browser_lux(None, "disconnected") == (155.0, "webcam")
+    # A real ESP32 reading always wins.
+    assert rt._prefer_browser_lux(500.0, "ok") == (500.0, "ok")
+    # A stale webcam reading is ignored.
+    rt._browser_lux_ts = time.monotonic() - 60
+    assert rt._prefer_browser_lux(420.0, "mock") == (420.0, "mock")
+
+
+def test_feed_stores_browser_lux():
+    rt = UserRuntime(user_id=999)
+    rt.feed({"neck_angle": -0.3, "distance_proxy": 0.4}, lux=222.0)
+    assert rt._browser_lux == 222.0
+    assert rt._webcam.read()[0] is not None
 

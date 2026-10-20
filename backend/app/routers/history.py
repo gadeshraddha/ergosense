@@ -59,7 +59,11 @@ def _baseline_stats(db: DbSession, user_id: int) -> dict:
         .order_by(Baseline.id.desc())
         .first()
     )
-    return stats_from_json(base.json_stats) if base else {}
+    return (
+        stats_from_json(base.json_stats, std_floors=settings.baseline_std_floors)
+        if base
+        else {}
+    )
 
 
 def _bucket_rows(db: DbSession, user_id: int, frm: datetime, to: datetime, fmt: str):

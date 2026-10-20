@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiError } from '../api/client'
 import PageHeader from '../components/PageHeader'
-import { useRawPosture } from '../hooks/usePostureTracking'
+import { useMonitoring } from '../monitoring/MonitoringProvider'
+import CameraPreview from '../components/CameraPreview'
 
 interface CalStatus {
   running: boolean
@@ -21,6 +22,7 @@ interface CalStatus {
 const SAMPLE_INTERVAL_MS = 150
 
 export default function Calibration() {
+  const { cameraStream, cameraReady, cameraError, cameraSample, requestCamera } = useMonitoring()
   const [step, setStep] = useState<'ready' | 'calibrating' | 'done' | 'failed'>('ready')
   const [duration, setDuration] = useState(150)
   const [elapsed, setElapsed] = useState(0)
@@ -33,15 +35,21 @@ export default function Calibration() {
   const lastSentRef = useRef(0)
   const finishingRef = useRef(false)
 
-  const { videoRef, isReady, cameraError } = useRawPosture((s) => {
-    if (!running || step !== 'calibrating') return
+  // Calibration needs the shared camera even when not monitoring — ask for it.
+  useEffect(() => {
+    requestCamera(true)
+    return () => requestCamera(false)
+  }, [requestCamera])
+
+  // Forward the newest camera frame while calibrating (throttled).
+  useEffect(() => {
+    if (!running || step !== 'calibrating' || !cameraSample) return
     const now = Date.now()
     if (now - lastSentRef.current < SAMPLE_INTERVAL_MS) return
     lastSentRef.current = now
-
     api<{ ok: boolean; valid_samples: number }>('/calibration/sample', {
       method: 'POST',
-      body: s,
+      body: cameraSample,
     })
       .then((r) => {
         setValid(r.valid_samples)
@@ -50,7 +58,7 @@ export default function Calibration() {
       .catch((e) => {
         setError(e instanceof Error ? e.message : 'Could not save a sample')
       })
-  })
+  }, [cameraSample, running, step])
 
   useEffect(() => {
     let id: number | null = null
@@ -171,10 +179,10 @@ export default function Calibration() {
             </p>
             <button
               onClick={start}
-              disabled={!isReady && !cameraError}
+              disabled={!cameraReady && !cameraError}
               className="rounded-lg bg-teal-600 px-4 py-2 text-white hover:bg-teal-700 disabled:opacity-50"
             >
-              {isReady ? 'Start Calibration' : 'Waiting for camera...'}
+              {cameraReady ? 'Start Calibration' : 'Waiting for camera...'}
             </button>
             {cameraError && (
               <p className="text-sm text-red-600">Camera error: {cameraError.message}</p>
@@ -241,20 +249,12 @@ export default function Calibration() {
       </div>
 
       {/*
-        The camera hook attaches the MediaStream once, when this page mounts.
-        The <video> must therefore exist from the very first render, so it stays in
-        the DOM and is only hidden outside the sampling step.
+        The camera stream is owned by the app-wide MonitoringProvider, so this
+        preview just attaches the shared stream. It stays in the DOM even when
+        hidden so switching steps never interrupts the live feed.
       */}
-      <div className={step === 'calibrating' ? 'mt-4' : 'hidden'}>
-        <video
-          ref={videoRef}
-          width={320}
-          height={240}
-          className="mx-auto transform scale-x-[-1] rounded-lg"
-          playsInline
-          autoPlay
-          muted
-        />
+      <div className={step === 'calibrating' ? 'mt-4 flex justify-center' : 'hidden'}>
+        <CameraPreview stream={cameraStream} />
       </div>
     </>
   )

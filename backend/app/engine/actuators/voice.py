@@ -40,20 +40,47 @@ class VoiceEngine:
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     # -- lifecycle ---------------------------------------------------------
-    def start(self) -> None:
-        if not self._supported or (self._thread and self._thread.is_alive()):
-            return
+    def _try_init(self) -> bool:
+        """Try to bring up the TTS engine. Safe to call repeatedly.
+
+        ``pyttsx3`` can fail transiently (audio device busy, driver hiccup), so
+        we never latch ``_supported=False`` forever: a later call re-attempts
+        init. Returns True when an engine is ready.
+        """
+        if not _HAVE_TTS:
+            self._supported = False
+            return False
+        if self._engine is not None:
+            self._supported = True
+            return True
         try:  # pragma: no cover - needs audio stack
-            self._engine = pyttsx3.init()
-            self._engine.setProperty("volume", float(self.volume))
-            self._engine.setProperty("rate", int(self.rate))
+            engine = pyttsx3.init()
+            engine.setProperty("volume", float(self.volume))
+            engine.setProperty("rate", int(self.rate))
+            self._engine = engine
+            self._supported = True
+            return True
         except Exception:  # pragma: no cover
             self._supported = False
             self._engine = None
+            return False
+
+    def start(self) -> None:
+        if self._thread and self._thread.is_alive():
+            return
+        if not self._try_init():
             return
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name="ergosense-voice", daemon=True)
         self._thread.start()
+
+    def retry(self) -> bool:
+        """Re-attempt to bring the engine up after a failure (e.g. Test voice)."""
+        if self._try_init() and not (self._thread and self._thread.is_alive()):
+            self._stop.clear()
+            self._thread = threading.Thread(target=self._run, name="ergosense-voice", daemon=True)
+            self._thread.start()
+        return self._supported
 
     def stop(self) -> None:
         self._stop.set()
@@ -61,6 +88,9 @@ class VoiceEngine:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2.0)
         self._thread = None
+        # Drop the engine so the next start() re-inits cleanly (pyttsx3 engines
+        # are not reliably reusable after a stop, especially on SAPI5).
+        self._engine = None
 
     # -- controls ----------------------------------------------------------
     @property
@@ -102,6 +132,9 @@ class VoiceEngine:
 
     def speak(self, message: str, *, force: bool = False) -> bool:
         """Queue a prompt. Returns True if it was accepted for speaking."""
+        if not self._supported:
+            # Self-heal: a transient init failure should not silence us forever.
+            self.retry()
         if force:
             ok = self._supported and not self.muted()
         else:
@@ -126,9 +159,13 @@ class VoiceEngine:
             if item is None:
                 break
             try:
+                if self._engine is None:
+                    # Engine went away (e.g. after a stop) - rebuild lazily.
+                    self._try_init()
                 if self._engine is not None:
                     self._engine.say(item)
                     self._engine.runAndWait()
             except Exception:
+                # A single failed utterance must not kill voice for the session.
+                self._engine = None
                 self._supported = False
-                break

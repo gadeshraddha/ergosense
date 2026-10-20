@@ -6,9 +6,9 @@ Update this file at the end of every module. Both Claude and Cursor read it firs
 - [x] M1 Foundation + Auth + App shell (done)
 - [x] M2 Monitoring engine + live stream (done)
 - [ ] M3 Calibration + AI brain + sessions (Claude) - backend complete, session/break tracking live
-- [ ] M4 Dashboard + Posture pages (Cursor) - Dashboard wired to the live WebSocket
+- [x] M4 Dashboard + Posture pages (done) - Dashboard + Posture wired to the live WebSocket and the shared webcam
 - [x] M5 Auto-brightness + Voice + Lighting & Alerts/Settings pages (done)
-- [ ] M6 Sessions & History pages + Demo mode + README (Cursor)
+- [ ] M6 Sessions & History pages + Demo mode + README (Cursor) - backend endpoints complete; Sessions, History and Alerts demo controls are built
 
 ## How to run
 - Windows: `.\scripts\run_dev.bat` from the project root (starts backend :8000 and frontend :5173, opens the browser).
@@ -49,14 +49,14 @@ Backend (`backend/app/`):
 - `engine/core/decide.py`: pure `decide_actions(state)` -> speak on sustained drift / low light / long session.
 - Routers: `ws.py` (`WS /ws/live?token=<jwt>`), `lighting.py` (`GET /api/lighting/summary|curve`, `POST /api/lighting/mode|brightness`), `settings.py` (`GET/PUT /api/settings`), `alerts.py` (`GET /api/alerts`, `POST /api/alerts/test-voice|mute|unmute`), `monitor.py` (rewritten on the runtime: `/live`, `/start`, `/stop`, `/feed`, `/mock`, `/events`).
 - `prefs.py` persists per-user settings (voice on/off, brightness mode, manual %). `schemas.py` has `LightingSummary/LightingCurvePoint`, `SettingsOut/Update`, `MuteRequest`, `MockRequest`. `main.py` wires the new routers and calls `manager.stop_all()` on shutdown.
-- `tests/test_actions.py`: unit tests for the brightness curve, decision layer, sensors, voice gating and the runtime snapshot (all 29 backend tests pass).
+- `tests/test_actions.py`: unit tests for the brightness curve, decision layer, sensors, voice gating, the runtime snapshot, the browser-lux preference and the welcome/self-heal paths (all 55 backend tests pass).
 
 Frontend (`frontend/src/`):
 - `hooks/useLive.ts` opens the `/ws/live` socket (auto-reconnect, clean close) and `monitoring/MonitoringProvider.tsx` owns the single socket for the whole shell, exposing `{data, connected, start, stop}`.
 - `components/Topbar.tsx`: real Monitoring Start/Stop button with a live connection dot.
 - `pages/Lighting.tsx`: live lux + comfort-zone band/status, the real lux->brightness curve with a moving live dot (data from `GET /lighting/curve`), Auto/Manual toggle + manual slider, lux/target trend chart, ESP32/mock badges.
 - `pages/Alerts.tsx`: alert timeline with type filters and empty state, Test voice, snooze 15/30/60 + unmute, and preference toggles (voice, auto-brightness) that persist via `PUT /settings`.
-- `pages/Dashboard.tsx`: now reads the live snapshot from the context instead of polling; no `Math.random`.
+- `pages/Dashboard.tsx`: now reads the live snapshot from the context instead of polling; no `Math.random`. Rewritten this session to the shared-camera/`CameraPreview` layout with Score/Posture/Light/Drift stat cards and device badges.
 
 ## Bug fixes (post-M3, this session)
 - `routers/monitor.py`: imported `WorkSession` (POST `/api/monitor/start` was 500) and fixed `deque` slicing in the insight call (POST `/api/monitor/feed` was 500 on every call).
@@ -73,11 +73,34 @@ Frontend (`frontend/src/`):
 - A stale session from a closed tab caused a `409` that silently blocked Start; `start()` now cancels the stale session and retries once.
 - `useRawPosture` sent `movement: 0.01` (constant), which made the fidget check useless and the quality score fake. It now measures real frame-to-frame change. Sample posting is throttled to ~7/s (was ~30/s).
 
+## Posture / lighting / voice / Ergo fixes (this session)
+- **Posture features were meaningless in real mode.** `neck_angle` and `head_forward` were the *same* number (`nose.y - shoulderMidY`), so head-forward did nothing, and `distance_proxy` was just shoulder width (normalised, near-constant — "sitting closer" changed nothing). Rewrote the browser feature extraction in `hooks/usePostureTracking.ts`:
+  - `neck_angle` = `nose.y - shoulderMidY` (image-y gap; upright = negative, leaning forward increases it — "more = worse", which the backend score/drift already assume).
+  - `head_forward` = `shoulderMidZ - nose.z` (nose depth relative to the shoulders), now genuinely distinct from the neck angle.
+  - `distance_proxy` = shoulder width + shoulder-depth term, so it actually responds to leaning in/out.
+  These match the unmodified scoring brain (`scoring.py` penalises positive z; `posture.py` uses signed z for `higher_is_worse` features).
+- **One app-wide camera for posture *and* ambient light.** The webcam now runs in `MonitoringProvider` via the new `usePostureCamera(enabled)` hook whenever real mode is monitoring (plus on demand for calibration via `requestCamera`). Posture, Dashboard and Calibration render a shared `CameraPreview` instead of each opening their own camera. This removes the old duplicate un-scored `usePostureTracking` camera (Dashboard rewritten with it).
+- **Ambient light from the webcam (phone-style, no ESP32 needed).** The same hook averages frame luminance (32×24 canvas) → `luminanceToLux()` → feeds `lux` to `POST /api/monitor/feed`. New runtime logic `_prefer_browser_lux()` uses the webcam estimate whenever the ESP32 reader reports `mock`/`disconnected` (i.e. no real hardware), and reports the device as `webcam`. A real ESP32 (`ok`) always wins. Lighting page copy/badges updated; auto-brightness now visibly tracks the light because the lux actually varies in real mode (verified: `screen_brightness_control` moved the screen 57%→30%). Mock lux still works via the Alerts demo slider.
+- **Sessions page** now opens with a short "What Sessions does" card (what a session is, how work time and auto-breaks work, the manual "I took a break" button, and the saved average score).
+- **Voice** was already wired (drift → `decide.decide_actions` → `_act` → `VoiceEngine.speak`, plus `POST /api/alerts/test-voice` with `force=True`, and mute/unmute). Confirmed live: test-voice returns `spoken: true` on this machine; drift/low-light/long-session voice is covered by `test_decide_*` + `test_voice_gating_and_mute`.
+- **New floating "Ergo" companion** (`components/ErgoCompanion.tsx`, mounted in `Layout`): a small bottom-right window showing the live Ergo Score, any drift alert, the current insight, and a voice on/off toggle. Minimises to a score bubble; open/closed state persists in localStorage. Hidden when logged out (it lives inside `Layout`).
+
+## Voice, companion & background-monitoring changes (this session)
+- **Voice now speaks up (and greets you).** Cooldowns were far too long (`voice_cooldown_seconds` 180→25, `voice_repeat_seconds` 600→90) so Ergo went silent after one line. Added `voice_welcome_text` in `config.py`, a `welcome` branch in `decide.decide_actions`, and `UserRuntime.welcome()` which speaks the greeting with `force=True` (bypasses cooldowns) and logs a `voice` event. `POST /api/monitor/start` now calls it, so pressing Start plays: *"Welcome! I am Ergo… you can mute me any time."* Drift/low-light/long-session prompts then flow through the normal decision path on every tick.
+- **Ergo is now an always-on-top companion (Document Picture-in-Picture).** `components/ErgoCompanion.tsx` pops the widget into a `documentPictureInPicture.requestWindow(...)` window (Chrome/Edge) via a React portal, copying the page styles so Tailwind renders. It floats over YouTube/Word/etc. There's a "Pop out" chevron in the header; closing the PiP window (✕ or the OS close) falls back to the in-page floating widget; minimise still collapses to the score bubble. Browsers without the API use the in-page widget. The header floats over other apps — click the small "Ergo ↗" pill on the page to refocus it.
+- **Monitoring keeps running when the app is not focused.** The hidden detection `<video>` is now moved *into* the PiP document while it is open (`attachDetectionVideo`), because a visible surface is not throttled by the browser; `usePostureTracking` also stops skipping frames when `document.hidden` while a PiP window is open (`setPipActive`). The WebSocket already stays connected in the background. Net effect: the session, posture/light feed and alerts continue until you press **Stop** — switching to another window no longer looks like a stop.
+- Note: background monitoring requires the companion to be popped out (or the tab visible); without a visible surface the browser pauses the camera, which is a browser limitation, not an app one.
+
+## Voice reliability, real companion window & baseline sensitivity (this session)
+- **Voice said "not supported".** The listening backend had been started from a Python without `pyttsx3` (the venv launcher spawns the base interpreter as a child on Windows, and a stale server was still bound to :8000). Fixed two ways: (1) the backend is now always started from `backend\.venv`; (2) `VoiceEngine` is **self-healing** — `_try_init()`/`retry()` re-attempt `pyttsx3.init()` on every `speak()`/`test-voice` and after any utterance error, and `stop()` clears the engine so the next session re-inits cleanly. `POST /api/alerts/test-voice` calls `retry()` first, so a transient audio hiccup can never silence voice for the whole session. Verified live: `test-voice` → `spoken: true`, and Start speaks the welcome.
+- **Companion would not stay over other apps.** It only popped out if you found and clicked a tiny chevron. Now: it **auto-pops out into the always-on-top Document Picture-in-Picture window the first time monitoring starts** (Chrome/Edge), the header button is a clear "Float" control, all PiP calls are guarded, and failures show an explicit message ("use Chrome or Edge"). Closing the window remembers the choice (`ergosense_ergo_pip_dismissed`) and falls back to the in-page widget. While popped out, a small "Ergo ↗ always on top" pill sits on the page to refocus the window. The detection `<video>` is moved into the PiP document so the browser keeps the camera running when the tab is hidden.
+- **"Screen distance" and "head forward" read red even when sitting well.** Root cause: a calm calibration made the baseline std-dev tiny (e.g. `distance_proxy` std 0.0066), so a normal ~0.03 shift scored 4-5 sigma → red. Added per-feature **minimum std-dev floors** (`baseline_std_floor_*` in `config.py`) applied both when building a baseline (`compute_baseline(std_floors=…)`) and when rehydrating stored ones (`stats_from_json(..., std_floors=…)`), so existing baselines stop being hyper-sensitive immediately. Also note: the webcam feature formulas changed in the previous session, so an old baseline should be rebuilt by re-running Calibration for accurate results.
+
 ## Known issues / notes
 - `scripts/run_dev.bat` was written for Windows but could only be tested on Linux (the `.sh` twin was tested). First Windows run may need a small fix.
 - `requirements.txt` now lists pyserial, pyttsx3 and screen-brightness-control. MediaPipe/OpenCV are not needed on the backend (pose runs in the browser).
 - The Alerts/Settings page exposes the controls the backend supports today (voice on/off, auto-brightness, snooze). Spec items that need new endpoints (change password, score-weight sliders, reset baseline, quiet hours) are deferred to M6.
-- Real-mode posture depends on the browser posting frames to `/api/monitor/feed`; without that, real mode shows the camera badge as `off` (mock mode is always complete).
-- Drift in mock mode still waits for `drift_enter_minutes` (2 min) before flagging, so the drift *badge* is slow to appear even though the posture numbers move immediately.
+- Real-mode posture depends on the browser posting frames to `/api/monitor/feed`. This now happens app-wide while real mode is monitoring (via `MonitoringProvider`); the same frames also carry the webcam ambient-light estimate. Without them, the camera badge shows `off` (mock mode is always complete).
+- Drift in mock mode still waits for `drift_enter_minutes` (2 min) before flagging, so the drift *badge* is slow to appear even though the posture numbers move immediately. Voice now speaks the welcome immediately on Start and posts drift/low-light/long-session prompts within ~25s of the condition (cooldowns shortened).
 - Login token lives in localStorage (fine for a local student project; httpOnly cookies would be the hardened option).
 - Login has no rate limiting yet (planned for M6).

@@ -32,10 +32,15 @@ def decide_actions(state: dict) -> list[Action]:
     """Return the actions to attempt for this tick.
 
     ``state`` keys used (all optional): ``drift`` (dict with level/feature),
-    ``session`` (with ``since_break_minutes``), ``lux``, plus the tunables
-    ``low_light_lux``, ``long_session_minutes`` and ``long_session_prompt``.
+    ``session`` (with ``since_break_minutes``), ``lux``, ``welcome`` (a greeting
+    string spoken once at session start), plus the tunables ``low_light_lux``,
+    ``long_session_minutes`` and ``long_session_prompt``.
     """
     actions: list[Action] = []
+
+    welcome = state.get("welcome")
+    if welcome:
+        actions.append(Action("speak", str(welcome), reason="welcome"))
 
     drift = state.get("drift") or {}
     if drift.get("level") in ("mild", "significant"):

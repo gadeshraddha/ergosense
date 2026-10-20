@@ -68,6 +68,12 @@ class UserRuntime:
         self._last_written = utcnow() - timedelta(seconds=settings.sample_write_seconds + 1)
         self._last_baseline_save = time.monotonic()
         self._baseline_dirty = False
+        # Ambient light estimated by the browser webcam (used when no ESP32 is
+        # actually connected, so real mode still has a live light signal).
+        self._browser_lux: float | None = None
+        self._browser_lux_ts: float = 0.0
+        # One-shot greeting spoken right after a session starts.
+        self._welcome_pending = False
 
         # sensors / actuators
         self._mock = MockSensors(lux=settings.mock_lux, simulate_drift=settings.mock_drift)
@@ -125,6 +131,7 @@ class UserRuntime:
         if self._light:
             self._light.start()
         self.voice.start()
+        self._welcome_pending = True
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, name=f"ergosense-rt-{self.user_id}", daemon=True)
         self._thread.start()
@@ -158,6 +165,8 @@ class UserRuntime:
         if lux is not None:
             with self._lock:
                 self.lux = float(lux)
+                self._browser_lux = float(lux)
+                self._browser_lux_ts = time.monotonic()
 
     def set_mock(self, *, lux: float | None = None, drift: bool | None = None) -> None:
         if lux is not None:
@@ -208,6 +217,35 @@ class UserRuntime:
         """A break was just taken: restart the time-since-break clock."""
         self._last_active = utcnow()
 
+    def welcome(self) -> bool:
+        """Speak the one-shot greeting at session start (bypasses cooldowns).
+
+        Returns True if the greeting was accepted for speaking. If voice is
+        unavailable or muted this is a quiet no-op.
+        """
+        if not settings.voice_welcome_text:
+            return False
+        spoke = self.voice.speak(settings.voice_welcome_text, force=True)
+        self._welcome_pending = False
+        if spoke:
+            self._write_event(utcnow(), "voice", "info", settings.voice_welcome_text, "welcome")
+        return spoke
+
+    def _prefer_browser_lux(
+        self, lux: float | None, status: str, *, max_age_s: float = 10.0
+    ) -> tuple[float | None, str]:
+        """Use the webcam's ambient-light estimate unless a real ESP32 is present.
+
+        The ESP32 reader reports ``mock``/``disconnected`` when no hardware is
+        attached, in which case a fresh browser lux reading is the better signal.
+        Returns the chosen ``(lux, device_status)``.
+        """
+        if status == "ok":
+            return lux, status
+        if self._browser_lux is not None and (time.monotonic() - self._browser_lux_ts) <= max_age_s:
+            return self._browser_lux, "webcam"
+        return lux, status
+
     # -- snapshot ----------------------------------------------------------
     def snapshot(self) -> dict:
         with self._lock:
@@ -246,6 +284,10 @@ class UserRuntime:
         else:
             features, cam_status = self._webcam.read()
             lux, esp_status = (self._light.read() if self._light else (None, "disconnected"))
+            # No real ESP32 present -> the reader falls back to a constant mock
+            # value. Prefer the browser's webcam estimate so real mode still has
+            # a *live* ambient-light signal (a phone-style light sensor).
+            lux, esp_status = self._prefer_browser_lux(lux, esp_status)
 
         with SessionLocal() as db:
             self._load_baseline(db)
@@ -362,6 +404,7 @@ class UserRuntime:
             "drift": self.drift,
             "session": self.session,
             "lux": lux,
+            "welcome": settings.voice_welcome_text if self._welcome_pending else None,
             "low_light_lux": settings.low_light_lux,
             "long_session_minutes": settings.long_session_minutes
             if settings.long_session_prompt
@@ -373,6 +416,8 @@ class UserRuntime:
                 continue
             if self.voice.speak(action.message):
                 self._write_event(now, "voice", "info", action.message, action.reason)
+                if action.reason == "welcome":
+                    self._welcome_pending = False
 
         # Log drift transitions as events too.
         level = self.drift["level"]
@@ -451,7 +496,11 @@ class UserRuntime:
             .order_by(Baseline.id.desc())
             .first()
         )
-        self._stats = stats_from_json(base.json_stats) if base else {}
+        self._stats = (
+            stats_from_json(base.json_stats, std_floors=settings.baseline_std_floors)
+            if base
+            else {}
+        )
         self.calibrated = base is not None
 
     def _load_prefs(self, db) -> None:

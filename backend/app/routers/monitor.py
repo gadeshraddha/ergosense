@@ -33,6 +33,7 @@ def start(
 ) -> dict:
     rt = manager.ensure(user.id)
     rt.start()
+    rt.welcome()
     return {"ok": True, "monitoring": True}
 
 

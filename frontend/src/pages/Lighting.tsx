@@ -121,11 +121,11 @@ export default function Lighting() {
     <>
       <PageHeader
         title="Lighting"
-        description="Room light from the BH1750 sensor, and automatic screen brightness."
+        description="Ambient light (from your webcam — no external sensor needed) and automatic screen brightness."
         actions={
           <div className="flex items-center gap-2 text-xs">
             <span className="rounded-full border border-slate-200 px-3 py-1 text-slate-600 dark:border-slate-700 dark:text-slate-300">
-              ESP32: {summary?.device ?? '—'}
+              Source: {live?.mode === 'real' ? 'Webcam' : live?.mode === 'mock' ? 'Mock' : '—'}
             </span>
             {live?.mode === 'mock' && (
               <span className="rounded-full bg-amber-100 px-3 py-1 font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
@@ -139,6 +139,14 @@ export default function Lighting() {
       {error && (
         <div className="mb-6 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300">
           {error}
+        </div>
+      )}
+
+      {lux == null && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300">
+          No light reading yet. In <strong>real</strong> mode the webcam measures ambient light while you
+          are on the Posture or Dashboard page. In <strong>mock</strong> mode use the slider on
+          Alerts → Demo controls.
         </div>
       )}
 

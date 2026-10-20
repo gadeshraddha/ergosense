@@ -99,6 +99,17 @@ export default function Sessions() {
         </div>
       )}
 
+      <div className="mb-4 rounded-2xl border border-teal-200 bg-teal-50 p-4 text-sm text-teal-800 dark:border-teal-500/30 dark:bg-teal-500/10 dark:text-teal-200">
+        <p className="font-semibold">What Sessions does</p>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-teal-800/90 dark:text-teal-200/90">
+          <li>A <strong>session</strong> starts when you press <em>Start monitoring</em> and ends when you stop.</li>
+          <li><strong>Work time</strong> counts while you are being monitored; a gap longer than the break
+            limit automatically counts as a break and restarts the “since last break” clock.</li>
+          <li>Press <strong>“I took a break”</strong> to log a break yourself — useful if you step away briefly.</li>
+          <li>When a session stops, its <strong>average Ergo Score</strong> is saved so you can see which days went well.</li>
+        </ul>
+      </div>
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="This session"

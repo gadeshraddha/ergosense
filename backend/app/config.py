@@ -46,6 +46,16 @@ class Settings(BaseSettings):
     # --- baseline auto-update ---
     baseline_ema_alpha: float = 0.02  # gentle drift of "normal" over time
 
+    # Minimum noise (std-dev) assumed for each posture feature when turning a
+    # live reading into a z-score. A calm calibration can make the raw std tiny,
+    # which would make *any* small movement look like a red "poor" deviation.
+    # These floors keep z-scores meaningful (all webcam-feature units).
+    baseline_std_floor_neck_angle: float = 0.012
+    baseline_std_floor_head_forward: float = 0.012
+    baseline_std_floor_shoulder_tilt: float = 0.008
+    baseline_std_floor_distance_proxy: float = 0.020
+    baseline_std_floor_movement: float = 0.004
+
     # --- drift detection (M3) ---
     drift_window_minutes: float = 10.0
     drift_demo_window_minutes: float = 1.0
@@ -97,10 +107,14 @@ class Settings(BaseSettings):
     voice_enabled: bool = True
     voice_volume: float = 0.9
     voice_rate: int = 175  # words per minute
-    voice_cooldown_seconds: float = 180.0  # global minimum between prompts
-    voice_repeat_seconds: float = 600.0  # the same message not more often than this
+    voice_cooldown_seconds: float = 25.0  # global minimum between prompts
+    voice_repeat_seconds: float = 90.0  # the same message not more often than this
     voice_quiet_hours_start: int | None = None  # 0-23 inclusive; None disables
     voice_quiet_hours_end: int | None = None
+    voice_welcome_text: str = (
+        "Welcome! I am Ergo. I will be monitoring your posture and giving you "
+        "friendly recommendations. You can mute me any time from my little window."
+    )
 
     # --- alerts (M5) ---
     low_light_lux: float = 250.0  # below this we nudge about ambient light
@@ -116,6 +130,17 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def baseline_std_floors(self) -> dict[str, float]:
+        """Per-feature minimum std-dev used when building a baseline."""
+        return {
+            "neck_angle": self.baseline_std_floor_neck_angle,
+            "head_forward": self.baseline_std_floor_head_forward,
+            "shoulder_tilt": self.baseline_std_floor_shoulder_tilt,
+            "distance_proxy": self.baseline_std_floor_distance_proxy,
+            "movement": self.baseline_std_floor_movement,
+        }
 
 
 settings = Settings()
