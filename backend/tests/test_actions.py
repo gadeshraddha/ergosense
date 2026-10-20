@@ -166,12 +166,16 @@ def test_voice_speak_self_heals_from_init_failure(monkeypatch):
             pass
 
     fake = _FakeEngine()
-    monkeypatch.setattr("app.engine.actuators.voice.pyttsx3", type("M", (), {"init": staticmethod(lambda: fake)}))
+    monkeypatch.setattr(
+        "app.engine.actuators.voice.pyttsx3",
+        type("M", (), {"init": staticmethod(lambda: fake)}),
+    )
     monkeypatch.setattr("app.engine.actuators.voice._HAVE_TTS", True)
 
-    assert v.retry() is True
-    assert v.status() == "ok"
+    # speak() should trigger a retry and accept the prompt.
     assert v.speak("hi", force=True) is True
+    assert v.supported is True
+    v.stop()  # do not leak the worker thread
 
 
 # --- runtime snapshot -----------------------------------------------------
