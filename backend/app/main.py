@@ -11,7 +11,19 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import init_db
-from .routers import auth, calibration, monitor, sessions
+from .engine.runtime import manager
+from .routers import (
+    alerts,
+    auth,
+    calibration,
+    history,
+    lighting,
+    monitor,
+    posture,
+    sessions,
+    settings as settings_router,
+    ws,
+)
 from .schemas import HealthResponse
 
 
@@ -19,6 +31,7 @@ from .schemas import HealthResponse
 async def lifespan(app: FastAPI):
     init_db()
     yield
+    manager.stop_all()
 
 
 def create_app() -> FastAPI:
@@ -39,7 +52,13 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(calibration.router)
     app.include_router(monitor.router)
+    app.include_router(lighting.router)
+    app.include_router(alerts.router)
+    app.include_router(settings_router.router)
     app.include_router(sessions.router)
+    app.include_router(posture.router)
+    app.include_router(history.router)
+    app.include_router(ws.router)
     return app
 
 

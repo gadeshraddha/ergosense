@@ -104,6 +104,21 @@ class DriftDetector:
             span_start = ts
         return max(0.0, recent[0][0] - span_start)
 
+    def _recent_avg(self, minutes: float) -> float:
+        """Average delta over the most recent `minutes` of samples.
+
+        Used for hysteresis exit: what matters is where the user is *now*, not
+        the old high readings that are still inside the longer trend window.
+        """
+        if not self._points:
+            return 0.0
+        newest = self._points[-1][0]
+        cutoff = newest - max(minutes, 1e-9)
+        values = [delta for ts, delta in self._points if ts >= cutoff]
+        if not values:
+            values = [self._points[-1][1]]
+        return sum(values) / len(values)
+
     def evaluate(self, now_minutes: float) -> DriftState:
         points = list(self._points)
         if len(points) < 3:
@@ -122,9 +137,10 @@ class DriftDetector:
             self._since_minutes = now_minutes - span if offset_trigger else now_minutes - self.window_minutes
 
         if self._active:
-            # Hysteresis: only exit when BOTH the offset and the trend have faded.
-            faded = abs(avg_delta) < self.exit_threshold and trend < self.exit_threshold
-            if faded:
+            # Hysteresis: leave once recent readings are back inside the lower
+            # exit threshold. Old high samples still inside the window must not
+            # keep a recovered user flagged as drifting.
+            if abs(self._recent_avg(self.enter_minutes)) < self.exit_threshold:
                 self._active = False
                 return _NO_DRIFT
             magnitude = max(abs(avg_delta), trend)

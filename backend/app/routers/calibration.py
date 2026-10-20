@@ -20,7 +20,9 @@ from ..engine.core.baseline import compute_baseline, stats_from_json
 from ..models import Baseline, Event, Sample, User, WorkSession
 from ..schemas import (
     BaselineOut,
+    BaselineStats,
     CalibrationCancelResponse,
+    CalibrationSampleRequest,
     CalibrationStartRequest,
     CalibrationStartResponse,
     CalibrationStatus,
@@ -90,13 +92,28 @@ def start_cal(
     with state_lock:
         if user.id in cal_sessions and cal_sessions[user.id].running():
             raise HTTPException(status.HTTP_409_CONFLICT, "Calibration already in progress")
-        cs = CalSession(user.id, demo=bool(body.demo))
+        cs = CalSession(user.id, demo=False if body.demo is None else bool(body.demo))
         cal_sessions[user.id] = cs
     return CalibrationStartResponse(
         ok=True,
         status_url=f"/api/calibration/status",
         duration_s=cs.duration_s,
     )
+
+
+@router.post("/sample")
+def add_sample(
+    body: CalibrationSampleRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    with state_lock:
+        cs = cal_sessions.get(user.id)
+        if not cs or not cs.running():
+            raise HTTPException(status.HTTP_409_CONFLICT, "No calibration in progress")
+        cs.add(body.model_dump())
+        count = len(cs.samples)
+    return {"ok": True, "valid_samples": count}
 
 
 @router.get("/status", response_model=CalibrationStatus)
@@ -142,6 +159,7 @@ def status_cal(
             reason=None,
             completed=False,
             baseline_ok=False,
+            features=sorted({k for s in cs.samples for k, v in s.items() if v is not None}),
         )
     # completed
     if cs.result is None:
@@ -175,6 +193,7 @@ def status_cal(
         completed=True,
         baseline_ok=res.ok,
         message="Calibration complete." if res.ok else "Calibration failed.",
+        features=sorted({k for s in cs.samples for k, v in s.items() if v is not None}),
     )
 
 
@@ -200,7 +219,10 @@ def get_baseline(
         return BaselineOut(present=False)
     return BaselineOut(
         present=True,
-        stats={name: BaselineStats(**v.to_json()) if False else BaselineStats(**{k: float(getattr(v, k)) for k in ["mean", "std", "median", "mad", "n"]}) for name, v in stats.items()},
+        stats={
+            name: BaselineStats(mean=v.mean, std=v.std, median=v.median, mad=v.mad, n=v.n)
+            for name, v in stats.items()
+        },
         valid_samples=base.json_stats.get("valid_samples", 0),
         quality=float(base.json_stats.get("quality", 0.0)),
         created_at=base.created_at,

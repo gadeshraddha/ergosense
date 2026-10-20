@@ -2,8 +2,34 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { useHealth } from '../hooks/useHealth'
+import { useMonitoring } from '../monitoring/MonitoringProvider'
 import Icon from './Icon'
 import ThemeToggle from './ThemeToggle'
+
+function MonitoringControl() {
+  const { data, connected, busy, start, stop } = useMonitoring()
+  const monitoring = data?.monitoring ?? false
+  return (
+    <button
+      type="button"
+      onClick={() => (monitoring ? stop() : start())}
+      disabled={busy}
+      className={`flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition disabled:opacity-50 ${
+        monitoring
+          ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 dark:bg-rose-500/10 dark:text-rose-300'
+          : 'bg-teal-600 text-white hover:bg-teal-700'
+      }`}
+      title={connected ? 'Live stream connected' : 'Live stream disconnected'}
+    >
+      <span
+        className={`h-2 w-2 rounded-full ${
+          monitoring ? (connected ? 'animate-pulse bg-rose-500' : 'bg-rose-400') : 'bg-teal-200'
+        }`}
+      />
+      {monitoring ? 'Stop' : 'Start monitoring'}
+    </button>
+  )
+}
 
 function ApiStatus() {
   const health = useHealth()
@@ -114,6 +140,7 @@ export default function Topbar({ onOpenMobile }: { onOpenMobile: () => void }) {
       </button>
       <div className="hidden lg:block" />
       <div className="flex items-center gap-2 sm:gap-3">
+        <MonitoringControl />
         <ApiStatus />
         <ThemeToggle />
         <UserMenu />

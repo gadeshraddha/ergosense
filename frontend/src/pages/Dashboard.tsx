@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { usePostureTracking } from '../hooks/usePostureTracking';
 import type { PostureData } from '../hooks/usePostureTracking';
+import { useMonitoring } from '../monitoring/MonitoringProvider';
 
 interface InfoCardProps {
   title: string;
@@ -33,19 +34,19 @@ export const Dashboard = () => {
     neckTilt: '0.000',
     timestamp: Date.now(),
   });
-  const [ambientLight, setAmbientLight] = useState<number>(500);
+
+  const { data: live } = useMonitoring();
 
   const { videoRef, isReady, cameraError } = usePostureTracking((d) => {
     setPostureData(d);
   });
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setAmbientLight(Math.floor(100 + Math.random() * 900));
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, []);
+  const getScoreStatus = (): 'good' | 'warning' | 'danger' | 'neutral' => {
+    if (!live) return 'neutral';
+    if (live.score >= 80) return 'good';
+    if (live.score >= 60) return 'warning';
+    return 'danger';
+  };
 
   const getPostureStatus = (): 'good' | 'warning' | 'danger' | 'neutral' => {
     if (postureData.posture === 'Upright') return 'good';
@@ -90,15 +91,32 @@ export const Dashboard = () => {
           />
           <InfoCard
             title="Ambient Light"
-            value={`${ambientLight} lx`}
+            value={live?.lux != null ? `${Math.round(live.lux)} lx` : '—'}
             status="neutral"
-            subtitle="Mock data (100-1000 lx)"
+            subtitle={live?.lux != null ? (live.mode === 'mock' ? 'Simulated (mock mode)' : 'ESP32 live') : 'No sensor reading'}
           />
           <InfoCard
-            title="AI Engine"
-            value={isReady ? 'Active' : 'Initializing'}
-            status={isReady ? 'good' : 'neutral'}
+            title="Ergo Score"
+            value={live ? `${Math.round(live.score)}` : '—'}
+            status={getScoreStatus()}
+            subtitle={live ? `${live.calibrated ? 'Calibrated' : 'Not calibrated'} · ${live.mode}` : 'Waiting for live data'}
           />
+        </div>
+
+        <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg border border-gray-200 dark:border-slate-700 mb-8">
+          <h2 className="text-xl font-semibold mb-2 text-gray-900 dark:text-slate-100">Live Insight</h2>
+          <p className="text-gray-600 dark:text-slate-300 text-sm">
+            {live ? live.insight : 'Start monitoring to see your live Ergo Score.'}
+          </p>
+          {live && (
+            <div className="mt-4 flex flex-wrap gap-3 text-xs">
+              {Object.entries(live.devices).map(([device, state]) => (
+                <span key={device} className="rounded-full border border-gray-200 dark:border-slate-600 px-3 py-1 text-gray-600 dark:text-slate-300">
+                  {device}: {state}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="bg-white dark:bg-slate-800 rounded-lg p-6 shadow-lg border border-gray-200 dark:border-slate-700">

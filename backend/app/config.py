@@ -74,6 +74,38 @@ class Settings(BaseSettings):
     long_session_minutes: float = 50.0  # after this we flag a long session
     sample_write_seconds: float = 5.0  # throttle DB Sample writes
 
+    # --- runtime / websocket (M2) ---
+    runtime_tick_seconds: float = 1.0  # decision loop cadence
+    ws_tick_seconds: float = 1.0  # WebSocket push cadence
+    baseline_persist_seconds: float = 60.0  # how often a learned baseline is saved
+    baseline_learn_min_score: float = 75.0  # only learn when the user is comfortable
+
+    # --- mock sensors (M2) ---
+    mock_lux: float = 420.0
+    mock_drift: bool = False  # "simulate drift" switch for demos
+    mock_drift_rate: float = 0.02  # neck_angle units gained per minute under drift sim
+
+    # --- auto-brightness (M5) ---
+    brightness_min_pct: float = 20.0
+    brightness_max_pct: float = 100.0
+    brightness_deadband_pct: float = 3.0  # ignore target changes smaller than this
+    brightness_min_interval_s: float = 5.0  # rate-limit actual changes
+    brightness_auto_pause_minutes: float = 5.0  # pause auto after a manual change
+    brightness_dark_factor: float = 0.55  # target brightness just below comfort_min lux
+
+    # --- voice feedback (M5) ---
+    voice_enabled: bool = True
+    voice_volume: float = 0.9
+    voice_rate: int = 175  # words per minute
+    voice_cooldown_seconds: float = 180.0  # global minimum between prompts
+    voice_repeat_seconds: float = 600.0  # the same message not more often than this
+    voice_quiet_hours_start: int | None = None  # 0-23 inclusive; None disables
+    voice_quiet_hours_end: int | None = None
+
+    # --- alerts (M5) ---
+    low_light_lux: float = 250.0  # below this we nudge about ambient light
+    long_session_prompt: bool = True
+
     @field_validator("mock", mode="before")
     @classmethod
     def _parse_mock(cls, v):

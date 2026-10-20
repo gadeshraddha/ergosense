@@ -226,6 +226,7 @@ export const useRawPosture = (onSample?: (s: RawPostureSample) => void) => {
   const isVisibleRef = useRef(true);
   const frameCounterRef = useRef(0);
   const cb = useRef(onSample);
+  const lastRawRef = useRef<RawPostureSample | null>(null);
   useEffect(() => { cb.current = onSample; }, [onSample]);
 
   useEffect(() => {
@@ -253,13 +254,24 @@ export const useRawPosture = (onSample?: (s: RawPostureSample) => void) => {
         });
         stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
         if (!mounted) { if (stream) stream.getTracks().forEach(t => t.stop()); return; }
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.width = 640;
-          videoRef.current.height = 480;
-          await new Promise<void>(res => { if (videoRef.current) videoRef.current.onloadedmetadata = () => res(); });
-          await videoRef.current.play();
+
+        // The consumer may render its <video> only in certain states. Wait for it:
+        // without a video element the stream is never attached and no frame is ever read.
+        for (let i = 0; i < 60 && !videoRef.current; i++) {
+          await new Promise(res => setTimeout(res, 50));
         }
+        const video = videoRef.current;
+        if (!video) throw new Error('The camera preview never appeared on the page.');
+        video.srcObject = stream;
+        video.width = 640;
+        video.height = 480;
+        await new Promise<void>(res => {
+          if (video.readyState >= 1) { res(); return; }
+          video.onloadedmetadata = () => res();
+        });
+        await video.play();
+        if (!mounted) { stream.getTracks().forEach(t => t.stop()); return; }
+
         setIsReady(true);
         setCameraError(null);
         frameCounterRef.current = 0;
@@ -278,14 +290,21 @@ export const useRawPosture = (onSample?: (s: RawPostureSample) => void) => {
                 const shoulderMidY = (lsh.y + rsh.y) / 2;
                 const headForward = (nose.y - shoulderMidY);
                 const shoulderTilt = Math.abs(lsh.y - rsh.y);
-                const movement = 0.01;
-                const sample = {
+                const prev = lastRawRef.current;
+                // Real frame-to-frame change, so "movement" measures actual fidgeting.
+                const movement = prev
+                  ? (Math.abs(headForward - (prev.neck_angle ?? headForward)) +
+                      Math.abs(shoulderWidth - (prev.distance_proxy ?? shoulderWidth))) /
+                    2
+                  : 0;
+                const sample: RawPostureSample = {
                   neck_angle: Number(headForward.toFixed(4)),
                   shoulder_tilt: Number(shoulderTilt.toFixed(4)),
                   head_forward: Number(headForward.toFixed(4)),
                   distance_proxy: Number(shoulderWidth.toFixed(4)),
                   movement: Number(movement.toFixed(4)),
                 };
+                lastRawRef.current = sample;
                 cb.current?.(sample);
               }
             }

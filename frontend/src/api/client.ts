@@ -91,3 +91,30 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   }
   return data as T
 }
+
+/** Download a file from an authenticated endpoint (browser downloads cannot
+ *  send the bearer token, so we fetch it and hand back a blob URL). */
+export async function downloadFile(
+  path: string,
+  filename: string,
+  params: Record<string, string> = {},
+): Promise<void> {
+  const query = new URLSearchParams(params).toString()
+  const headers: Record<string, string> = {}
+  const token = getToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+
+  const res = await fetch(`/api${path}${query ? `?${query}` : ''}`, { headers })
+  if (res.status === 401 && unauthorizedHandler) unauthorizedHandler()
+  if (!res.ok) throw new ApiError(res.status, `Download failed (${res.status})`)
+
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
