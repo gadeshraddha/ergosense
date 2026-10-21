@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { api } from '../api/client'
 import { useLive } from '../hooks/useLive'
 import { usePostureCamera } from '../hooks/usePostureTracking'
-import type { RawPostureSample } from '../hooks/usePostureTracking'
+import type { CameraErrorKind, RawPostureSample } from '../hooks/usePostureTracking'
 import type { LiveSnapshot } from '../api/types'
 
 /** How often browser camera frames are forwarded to the engine (ms). */
@@ -21,6 +21,10 @@ interface MonitoringValue {
   cameraStream: MediaStream | null
   cameraReady: boolean
   cameraError: Error | null
+  /** Which half failed: the webcam itself, or the pose model download. */
+  cameraErrorKind: CameraErrorKind | null
+  /** Try the camera again after a failure. */
+  retryCamera: () => void
   /** The newest raw posture features from the camera. */
   cameraSample: RawPostureSample | null
   /** Ask the shared camera to run (e.g. on the Calibration page). */
@@ -90,6 +94,8 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
         cameraStream: camera.stream,
         cameraReady: camera.ready,
         cameraError: camera.error,
+        cameraErrorKind: camera.errorKind,
+        retryCamera: camera.retry,
         cameraSample: camera.latest,
         requestCamera,
       }}

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "postinstall": "node scripts/setup-mediapipe-assets.mjs",
+    "setup:mediapipe": "node scripts/setup-mediapipe-assets.mjs --model"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^1.1.1",

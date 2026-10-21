@@ -10,7 +10,10 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
-      '/ws': { target: 'ws://127.0.0.1:8000', ws: true },
+      // `ws: true` makes Vite forward the WebSocket upgrade. `changeOrigin`
+      // keeps the Host header pointing at the backend, so the proxy behaves
+      // exactly like a direct connection.
+      '/ws': { target: 'ws://127.0.0.1:8000', changeOrigin: true, ws: true },
     },
   },
 })

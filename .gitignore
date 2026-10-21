@@ -10,3 +10,8 @@ dist/
 .vite/
 .DS_Store
 *.log
+
+# The MediaPipe WASM runtime is copied out of node_modules by
+# `npm install` (see frontend/scripts/setup-mediapipe-assets.mjs), so it does
+# not belong in git. The pose model next to it IS committed.
+frontend/public/mediapipe/wasm/

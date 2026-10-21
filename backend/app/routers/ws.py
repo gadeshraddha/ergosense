@@ -38,8 +38,27 @@ async def ws_live(websocket: WebSocket, token: str = "") -> None:
     await websocket.accept()
     rt = manager.ensure(user.id)
     tick = max(0.2, settings.ws_tick_seconds)
+
+    async def watch_client() -> None:
+        """Wait for the browser to hang up.
+
+        Without this the server would only notice a disconnect when the next
+        snapshot fails to send, and the socket would be torn down abruptly -
+        which the dev proxy reports as a socket error.
+        """
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            pass
+        except Exception:
+            pass
+
+    watcher = asyncio.create_task(watch_client())
     try:
         while True:
+            if watcher.done():
+                break
             snapshot = rt.snapshot()
             await websocket.send_json(
                 {
@@ -52,6 +71,8 @@ async def ws_live(websocket: WebSocket, token: str = "") -> None:
         pass
     except Exception:  # pragma: no cover - network edge cases
         log.exception("ws live stream failed for user %s", user.id)
+    finally:
+        watcher.cancel()
         try:
             await websocket.close()
         except Exception:
